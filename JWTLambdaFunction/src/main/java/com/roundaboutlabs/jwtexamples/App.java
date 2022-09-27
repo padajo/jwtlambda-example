@@ -29,9 +29,18 @@ import org.json.simple.parser.ContainerFactory;
 
 import org.json.simple.parser.ParseException;
 
+import software.amazon.awssdk.services.ssm.SsmClient;
+import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.ssm.SsmClient;
+import software.amazon.awssdk.services.ssm.model.GetParameterRequest;
+import software.amazon.awssdk.services.ssm.model.GetParameterResponse;
+import software.amazon.awssdk.services.ssm.model.SsmException;
+
 public class App implements RequestHandler<SQSEvent, Void>{
 
-    private String secret = "abc123";
+    private String parameterSecretKey = "jwt-example-secret";
+    private String secret = null;
     private LambdaLogger logger;
 
     @Override
@@ -39,6 +48,35 @@ public class App implements RequestHandler<SQSEvent, Void>{
 
         // get the logger and set the private logger 
         logger = context.getLogger();
+
+        // get the secret from the parameter store
+        if(secret == null) {
+            String paraName = "jwt-example-secret";
+
+            Region region = Region.EU_WEST_1;
+            SsmClient ssmClient = SsmClient.builder()
+                .region(region)
+                .credentialsProvider(ProfileCredentialsProvider.create())
+                .build();
+
+            try {
+                GetParameterRequest parameterRequest = GetParameterRequest.builder()
+                    .name(paraName)
+                    .withDecryption(true) // make sure it's decrypted 
+                    .build();
+    
+                GetParameterResponse parameterResponse = ssmClient.getParameter(parameterRequest);
+
+                secret = parameterResponse.parameter().value();
+                logger.log(String.format("The parameter value is %s", secret));
+    
+            } catch (SsmException e) {
+                logger.log(e.getMessage());
+                throw new Error(e);
+            }
+
+            ssmClient.close();
+        }
 
         int i = 0;
         java.util.Base64.Decoder decoder = java.util.Base64.getUrlDecoder();
